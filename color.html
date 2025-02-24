@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <style>
+    .form-container {
+      max-width: 500px;
+      margin: 20px auto;
+      padding: 20px;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+    }
+
+    .color-input {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 10px;
+      align-items: center;
+    }
+
+    .color-input input[type="color"] {
+      width: 50px;
+      height: 40px;
+    }
+
+    .color-input input[type="text"] {
+      width: 100px;
+      padding: 8px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+    }
+
+    .length-input {
+      margin: 20px 0;
+    }
+
+    .length-input input {
+      width: 100px;
+      padding: 8px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+    }
+
+    .hsl-range {
+      margin: 20px 0;
+    }
+
+    .hsl-range label {
+      display: block;
+      margin-bottom: 5px;
+    }
+
+    .range-slider {
+      position: relative;
+      width: 100%;
+      height: 10px;
+    }
+
+    .range-slider input[type="range"] {
+      position: absolute;
+      width: 100%;
+      pointer-events: none;
+      -webkit-appearance: none;
+      z-index: 2;
+      height: 10px;
+      opacity: 0;
+    }
+
+    .range-slider input[type="range"]::-webkit-slider-thumb {
+      pointer-events: all;
+      width: 20px;
+      height: 20px;
+      border-radius: 0;
+      border: 0 none;
+      background-color: red;
+      cursor: pointer;
+      -webkit-appearance: none;
+    }
+
+    .slider-track {
+      width: 100%;
+      height: 10px;
+      position: absolute;
+      margin: auto;
+      top: 0;
+      bottom: 0;
+      border-radius: 5px;
+      background: #ddd;
+    }
+
+    .slider-range {
+      position: absolute;
+      background: #4CAF50;
+      top: 0;
+      bottom: 0;
+      border-radius: 5px;
+    }
+
+    .range-values {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+      color: #666;
+      margin-top: 5px;
+    }
+
+    .generate-btn {
+      background: #4CAF50;
+      color: white;
+      padding: 10px 20px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+
+    .generate-btn:hover {
+      background: #45a049;
+    }
+
+    .color-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin-top: 20px;
+    }
+
+    .color-box {
+      aspect-ratio: 1;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      text-shadow: 1px 1px 1px rgba(0, 0, 0, 0.5);
+    }
+  </style>
+</head>
+
+<body>
+  <div class="form-container">
+    <div id="colorInputs">
+      <script>
+        const defaultColors = [
+          '#0274BD',
+          '#E9E6DD',
+          '#C4AD9D',
+          '#000000',
+          '#F57251'
+        ];
+
+        defaultColors.forEach((color, i) => {
+          document.write(`
+            <div class="color-input">
+              <input type="color" id="color${i + 1}" value="${color}">
+              <input type="text" value="${color}" id="colorText${i + 1}">
+            </div>
+          `);
+        });
+      </script>
+    </div>
+
+    <div class="length-input">
+      <label for="paletteLength">Number of Colors:</label>
+      <input type="number" id="paletteLength" value="9" min="1">
+    </div>
+
+    <div class="hsl-range">
+      <label>Hue Range (0-360):</label>
+      <div class="range-slider">
+        <div class="slider-track"></div>
+        <div class="slider-range" id="hueRange"></div>
+        <input type="range" id="hueMin" min="0" max="360" value="0">
+        <input type="range" id="hueMax" min="0" max="360" value="360">
+      </div>
+      <div class="range-values">
+        <span id="hueMinValue">0</span>
+        <span id="hueMaxValue">360</span>
+      </div>
+
+      <label>Saturation Range (0-100):</label>
+      <div class="range-slider">
+        <div class="slider-track"></div>
+        <div class="slider-range" id="satRange"></div>
+        <input type="range" id="satMin" min="0" max="100" value="20">
+        <input type="range" id="satMax" min="0" max="100" value="80">
+      </div>
+      <div class="range-values">
+        <span id="satMinValue">20</span>
+        <span id="satMaxValue">80</span>
+      </div>
+
+      <label>Lightness Range (0-100):</label>
+      <div class="range-slider">
+        <div class="slider-track"></div>
+        <div class="slider-range" id="lightRange"></div>
+        <input type="range" id="lightMin" min="0" max="100" value="20">
+        <input type="range" id="lightMax" min="0" max="100" value="80">
+      </div>
+      <div class="range-values">
+        <span id="lightMinValue">20</span>
+        <span id="lightMaxValue">80</span>
+      </div>
+    </div>
+
+    <button onclick="generateAndDisplayPalette()" class="generate-btn">Generate Palette</button>
+
+    <div id="colorGrid" class="color-grid"></div>
+  </div>
+
+  <script>
+    /**
+     * Generates a palette of colors based on base theme tones.
+     * @param {number} numColors - The number of colors needed for the palette.
+     * @param {string[]} baseColors - Array of base color hex codes (e.g. ['#FF5733', '#33FF57', ...]).
+     * @returns {string[]} - An array of hex color strings.
+     */
+    function generateThemePalette(numColors, baseColors) {
+      // Helper: Convert hex to RGB.
+      function hexToRgb(hex) {
+        hex = hex.replace(/^#/, '');
+        if (hex.length === 3) {
+          hex = hex.split('').map(ch => ch + ch).join('');
+        }
+        const intVal = parseInt(hex, 16);
+        return {
+          r: (intVal >> 16) & 255,
+          g: (intVal >> 8) & 255,
+          b: intVal & 255
+        };
+      }
+
+      // Helper: Convert RGB to hex.
+      function rgbToHex(r, g, b) {
+        return '#' + [r, g, b]
+          .map(x => {
+            const hex = x.toString(16);
+            return hex.length === 1 ? '0' + hex : hex;
+          })
+          .join('')
+          .toUpperCase();
+      }
+
+      // Helper: Convert RGB to HSL.
+      function rgbToHsl(r, g, b) {
+        r /= 255; g /= 255; b /= 255;
+        const max = Math.max(r, g, b);
+        const min = Math.min(r, g, b);
+        let h, s;
+        const l = (max + min) / 2;
+
+        if (max === min) {
+          h = s = 0; // achromatic
+        } else {
+          const d = max - min;
+          s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+          switch (max) {
+            case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+            case g: h = (b - r) / d + 2; break;
+            case b: h = (r - g) / d + 4; break;
+          }
+          h /= 6;
+        }
+        return { h: h * 360, s: s * 100, l: l * 100 };
+      }
+
+      // Helper: Convert HSL to RGB.
+      function hslToRgb(h, s, l) {
+        h /= 360;
+        s /= 100;
+        l /= 100;
+
+        let r, g, b;
+        if (s === 0) {
+          r = g = b = l; // achromatic
+        } else {
+          const hue2rgb = (p, q, t) => {
+            if (t < 0) t += 1;
+            if (t > 1) t -= 1;
+            if (t < 1 / 6) return p + (q - p) * 6 * t;
+            if (t < 1 / 2) return q;
+            if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+            return p;
+          };
+          const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+          const p = 2 * l - q;
+          r = hue2rgb(p, q, h + 1 / 3);
+          g = hue2rgb(p, q, h);
+          b = hue2rgb(p, q, h - 1 / 3);
+        }
+        return { r: Math.round(r * 255), g: Math.round(g * 255), b: Math.round(b * 255) };
+      }
+
+      // Helper: Generate variations of a base color with more granular steps
+      function generateVariations(baseColor, count) {
+        const { r, g, b } = hexToRgb(baseColor);
+        const { h, s, l } = rgbToHsl(r, g, b);
+
+        const variations = [];
+
+        // Get HSL range values
+        const hueMin = parseInt(document.getElementById('hueMin').value);
+        const hueMax = parseInt(document.getElementById('hueMax').value);
+        const satMin = parseInt(document.getElementById('satMin').value);
+        const satMax = parseInt(document.getElementById('satMax').value);
+        const lightMin = parseInt(document.getElementById('lightMin').value);
+        const lightMax = parseInt(document.getElementById('lightMax').value);
+
+        for (let i = 0; i < count; i++) {
+          // Generate random HSL values within the specified ranges
+          const newH = Math.random() * (hueMax - hueMin) + hueMin;
+          const newS = Math.random() * (satMax - satMin) + satMin;
+          const newL = Math.random() * (lightMax - lightMin) + lightMin;
+
+          const { r: newR, g: newG, b: newB } = hslToRgb(newH, newS, newL);
+          variations.push(rgbToHex(newR, newG, newB));
+        }
+
+        // Add the original color
+        variations.push(baseColor);
+
+        return variations;
+      }
+
+      let palette = [];
+
+      // Calculate how many variations we need per base color
+      const variationsPerColor = Math.ceil(numColors / baseColors.length);
+
+      // Generate variations for each base color
+      baseColors.forEach(baseColor => {
+        const variations = generateVariations(baseColor, variationsPerColor);
+        palette.push(...variations);
+      });
+
+      // Shuffle the palette
+      for (let i = palette.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [palette[i], palette[j]] = [palette[j], palette[i]];
+      }
+
+      // Remove duplicates and trim to desired length
+      return [...new Set(palette)].slice(0, numColors);
+    }
+
+    // Sync color input with text input
+    for (let i = 1; i <= 5; i++) {
+      const colorInput = document.getElementById(`color${i}`);
+      const textInput = document.getElementById(`colorText${i}`);
+
+      colorInput.addEventListener('input', (e) => {
+        textInput.value = e.target.value.toUpperCase();
+      });
+
+      textInput.addEventListener('input', (e) => {
+        if (/^#[0-9A-F]{6}$/i.test(e.target.value)) {
+          colorInput.value = e.target.value;
+        }
+      });
+    }
+
+    // Setup range sliders
+    function setupRangeSlider(type, minDefault, maxDefault) {
+      const minInput = document.getElementById(type + 'Min');
+      const maxInput = document.getElementById(type + 'Max');
+      const minDisplay = document.getElementById(type + 'MinValue');
+      const maxDisplay = document.getElementById(type + 'MaxValue');
+      const range = document.getElementById(type + 'Range');
+      const max = maxInput.max;
+
+      function updateRange() {
+        const minVal = parseInt(minInput.value);
+        const maxVal = parseInt(maxInput.value);
+
+        if (minVal > maxVal) {
+          if (this === minInput) {
+            maxInput.value = minVal;
+          } else {
+            minInput.value = maxVal;
+          }
+        }
+
+        minDisplay.textContent = minInput.value;
+        maxDisplay.textContent = maxInput.value;
+
+        const leftPos = (minVal / max) * 100;
+        const rightPos = 100 - (maxVal / max) * 100;
+
+        range.style.left = leftPos + '%';
+        range.style.right = rightPos + '%';
+      }
+
+      minInput.addEventListener('input', updateRange);
+      maxInput.addEventListener('input', updateRange);
+
+      // Initialize
+      minInput.value = minDefault;
+      maxInput.value = maxDefault;
+      updateRange();
+    }
+
+    setupRangeSlider('hue', 0, 360);
+    setupRangeSlider('sat', 20, 80);
+    setupRangeSlider('light', 20, 80);
+
+    function generateAndDisplayPalette() {
+      const baseColors = [];
+      for (let i = 1; i <= 5; i++) {
+        baseColors.push(document.getElementById(`color${i}`).value);
+      }
+
+      const numColors = parseInt(document.getElementById('paletteLength').value);
+      const palette = generateThemePalette(numColors, baseColors);
+
+      const gridContainer = document.getElementById('colorGrid');
+      gridContainer.innerHTML = '';
+
+      palette.forEach(color => {
+        const colorBox = document.createElement('div');
+        colorBox.className = 'color-box';
+        colorBox.style.backgroundColor = color;
+        colorBox.textContent = color;
+        gridContainer.appendChild(colorBox);
+      });
+    }
+
+    // Initial generation
+    generateAndDisplayPalette();
+  </script>
+</body>
+
+</html>
