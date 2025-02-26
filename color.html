@@ -30,15 +30,41 @@
       border-radius: 4px;
     }
 
-    .length-input {
+    .length-input,
+    .delta-input {
       margin: 20px 0;
     }
 
-    .length-input input {
+    .length-input input,
+    .delta-input input {
       width: 100px;
       padding: 8px;
       border: 1px solid #ccc;
       border-radius: 4px;
+    }
+
+    .delta-input label {
+      margin-right: 10px;
+    }
+
+    .delta-input .info-tooltip {
+      cursor: help;
+      position: relative;
+      margin-left: 5px;
+    }
+
+    .delta-input .info-tooltip:hover::after {
+      content: "Delta E is a measure of visual difference between colors. Higher values create more distinct colors. Recommended: 10-30";
+      position: absolute;
+      bottom: 20px;
+      left: -10px;
+      width: 250px;
+      padding: 8px;
+      background: #333;
+      color: white;
+      border-radius: 4px;
+      font-size: 12px;
+      z-index: 10;
     }
 
     .hsl-range {
@@ -133,6 +159,13 @@
       color: white;
       text-shadow: 1px 1px 1px rgba(0, 0, 0, 0.5);
     }
+
+    .attempt-info {
+      text-align: center;
+      margin-top: 10px;
+      font-size: 12px;
+      color: #666;
+    }
   </style>
 </head>
 
@@ -162,6 +195,12 @@
     <div class="length-input">
       <label for="paletteLength">Number of Colors:</label>
       <input type="number" id="paletteLength" value="9" min="1">
+    </div>
+
+    <div class="delta-input">
+      <label for="deltaThreshold">Delta E Threshold:</label>
+      <input type="number" id="deltaThreshold" value="15" min="1" max="100" step="1">
+      <span class="info-tooltip">ⓘ</span>
     </div>
 
     <div class="hsl-range">
@@ -205,16 +244,77 @@
     <button onclick="generateAndDisplayPalette()" class="generate-btn">Generate Palette</button>
 
     <div id="colorGrid" class="color-grid"></div>
+    <div id="attemptInfo" class="attempt-info"></div>
   </div>
 
   <script>
     /**
-     * Generates a palette of colors based on base theme tones.
-     * @param {number} numColors - The number of colors needed for the palette.
-     * @param {string[]} baseColors - Array of base color hex codes (e.g. ['#FF5733', '#33FF57', ...]).
-     * @returns {string[]} - An array of hex color strings.
+     * Converts RGB components to CIELAB color space for Delta E calculation
+     * @param {number} r - Red component (0-255)
+     * @param {number} g - Green component (0-255)
+     * @param {number} b - Blue component (0-255)
+     * @returns {Object} - CIELAB values {l, a, b}
      */
-    function generateThemePalette(numColors, baseColors) {
+    function rgbToLab(r, g, b) {
+      // First, convert RGB to XYZ
+      r /= 255;
+      g /= 255;
+      b /= 255;
+
+      // Apply gamma correction
+      r = r > 0.04045 ? Math.pow((r + 0.055) / 1.055, 2.4) : r / 12.92;
+      g = g > 0.04045 ? Math.pow((g + 0.055) / 1.055, 2.4) : g / 12.92;
+      b = b > 0.04045 ? Math.pow((b + 0.055) / 1.055, 2.4) : b / 12.92;
+
+      // Convert to XYZ using sRGB standard reference values
+      const x = r * 0.4124 + g * 0.3576 + b * 0.1805;
+      const y = r * 0.2126 + g * 0.7152 + b * 0.0722;
+      const z = r * 0.0193 + g * 0.1192 + b * 0.9505;
+
+      // Convert XYZ to Lab
+      const xRef = 0.95047;
+      const yRef = 1.00000;
+      const zRef = 1.08883;
+
+      const epsilon = 0.008856;
+      const kappa = 903.3;
+
+      const xr = x / xRef;
+      const yr = y / yRef;
+      const zr = z / zRef;
+
+      const fx = xr > epsilon ? Math.pow(xr, 1 / 3) : (kappa * xr + 16) / 116;
+      const fy = yr > epsilon ? Math.pow(yr, 1 / 3) : (kappa * yr + 16) / 116;
+      const fz = zr > epsilon ? Math.pow(zr, 1 / 3) : (kappa * zr + 16) / 116;
+
+      const l = 116 * fy - 16;
+      const a = 500 * (fx - fy);
+      const b_val = 200 * (fy - fz);
+
+      return { l, a, b: b_val };
+    }
+
+    /**
+     * Calculates Delta E (CIE76) between two Lab colors
+     * @param {Object} lab1 - First color in Lab space {l, a, b}
+     * @param {Object} lab2 - Second color in Lab space {l, a, b}
+     * @returns {number} - Delta E value
+     */
+    function calculateDeltaE(lab1, lab2) {
+      const deltaL = lab1.l - lab2.l;
+      const deltaA = lab1.a - lab2.a;
+      const deltaB = lab1.b - lab2.b;
+      return Math.sqrt(deltaL * deltaL + deltaA * deltaA + deltaB * deltaB);
+    }
+
+    /**
+     * Generates a palette of colors based on base theme tones with Delta E threshold.
+     * @param {number} numColors - The number of colors needed for the palette.
+     * @param {string[]} baseColors - Array of base color hex codes.
+     * @param {number} deltaThreshold - Minimum Delta E difference allowed between colors.
+     * @returns {Object} - Object with palette array and attempts count.
+     */
+    function generateThemePalette(numColors, baseColors, deltaThreshold) {
       // Helper: Convert hex to RGB.
       function hexToRgb(hex) {
         hex = hex.replace(/^#/, '');
@@ -233,7 +333,7 @@
       function rgbToHex(r, g, b) {
         return '#' + [r, g, b]
           .map(x => {
-            const hex = x.toString(16);
+            const hex = Math.round(x).toString(16);
             return hex.length === 1 ? '0' + hex : hex;
           })
           .join('')
@@ -290,56 +390,93 @@
         return { r: Math.round(r * 255), g: Math.round(g * 255), b: Math.round(b * 255) };
       }
 
-      // Helper: Generate variations of a base color with more granular steps
-      function generateVariations(baseColor, count) {
-        const { r, g, b } = hexToRgb(baseColor);
-        const { h, s, l } = rgbToHsl(r, g, b);
+      // Get HSL range values
+      const hueMin = parseInt(document.getElementById('hueMin').value);
+      const hueMax = parseInt(document.getElementById('hueMax').value);
+      const satMin = parseInt(document.getElementById('satMin').value);
+      const satMax = parseInt(document.getElementById('satMax').value);
+      const lightMin = parseInt(document.getElementById('lightMin').value);
+      const lightMax = parseInt(document.getElementById('lightMax').value);
 
-        const variations = [];
+      // Helper: Generate a random color within HSL constraints
+      function generateRandomColor() {
+        // Generate random HSL values within the specified ranges
+        const h = Math.random() * (hueMax - hueMin) + hueMin;
+        const s = Math.random() * (satMax - satMin) + satMin;
+        const l = Math.random() * (lightMax - lightMin) + lightMin;
 
-        // Get HSL range values
-        const hueMin = parseInt(document.getElementById('hueMin').value);
-        const hueMax = parseInt(document.getElementById('hueMax').value);
-        const satMin = parseInt(document.getElementById('satMin').value);
-        const satMax = parseInt(document.getElementById('satMax').value);
-        const lightMin = parseInt(document.getElementById('lightMin').value);
-        const lightMax = parseInt(document.getElementById('lightMax').value);
+        const { r, g, b } = hslToRgb(h, s, l);
+        return rgbToHex(r, g, b);
+      }
 
-        for (let i = 0; i < count; i++) {
-          // Generate random HSL values within the specified ranges
-          const newH = Math.random() * (hueMax - hueMin) + hueMin;
-          const newS = Math.random() * (satMax - satMin) + satMin;
-          const newL = Math.random() * (lightMax - lightMin) + lightMin;
+      // Function to check if a color meets the Delta E threshold with all existing colors
+      function meetsThreshold(newColorHex, existingColors) {
+        const { r: newR, g: newG, b: newB } = hexToRgb(newColorHex);
+        const newLab = rgbToLab(newR, newG, newB);
 
-          const { r: newR, g: newG, b: newB } = hslToRgb(newH, newS, newL);
-          variations.push(rgbToHex(newR, newG, newB));
+        for (const existingColor of existingColors) {
+          const { r, g, b } = hexToRgb(existingColor);
+          const existingLab = rgbToLab(r, g, b);
+
+          const deltaE = calculateDeltaE(newLab, existingLab);
+          if (deltaE < deltaThreshold) {
+            return false;
+          }
+        }
+        return true;
+      }
+
+      // Start with the base colors
+      let palette = [...baseColors];
+      let allCandidates = [...baseColors];
+
+      // Create a pool of candidate colors - higher numbers give better results but slower performance
+      const maxCandidates = Math.max(500, numColors * 10);
+      const maxAttempts = 100; // Maximum attempts to find distinct colors
+      let attempts = 0;
+
+      while (allCandidates.length < maxCandidates && attempts < maxAttempts) {
+        attempts++;
+
+        // Generate a batch of random colors
+        const batchSize = 100;
+        const newBatch = [];
+
+        for (let i = 0; i < batchSize; i++) {
+          const newColor = generateRandomColor();
+          if (meetsThreshold(newColor, allCandidates)) {
+            newBatch.push(newColor);
+            allCandidates.push(newColor);
+            if (allCandidates.length >= maxCandidates) break;
+          }
         }
 
-        // Add the original color
-        variations.push(baseColor);
-
-        return variations;
+        // If we couldn't generate any new colors in this batch that meet the threshold
+        if (newBatch.length === 0) {
+          // If we have at least the requested number of colors, we can stop
+          if (allCandidates.length >= numColors) {
+            break;
+          }
+          // If we're trying too hard, relax the threshold slightly
+          if (attempts > maxAttempts / 2) {
+            deltaThreshold *= 0.9; // Reduce threshold by 10%
+          }
+        }
       }
 
-      let palette = [];
+      // Select up to numColors from the candidates
+      const result = allCandidates.slice(0, numColors);
 
-      // Calculate how many variations we need per base color
-      const variationsPerColor = Math.ceil(numColors / baseColors.length);
-
-      // Generate variations for each base color
-      baseColors.forEach(baseColor => {
-        const variations = generateVariations(baseColor, variationsPerColor);
-        palette.push(...variations);
-      });
-
-      // Shuffle the palette
-      for (let i = palette.length - 1; i > 0; i--) {
+      // Shuffle the result
+      for (let i = result.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
-        [palette[i], palette[j]] = [palette[j], palette[i]];
+        [result[i], result[j]] = [result[j], result[i]];
       }
 
-      // Remove duplicates and trim to desired length
-      return [...new Set(palette)].slice(0, numColors);
+      return {
+        palette: result,
+        attempts: attempts
+      };
     }
 
     // Sync color input with text input
@@ -409,7 +546,11 @@
       }
 
       const numColors = parseInt(document.getElementById('paletteLength').value);
-      const palette = generateThemePalette(numColors, baseColors);
+      const deltaThreshold = parseFloat(document.getElementById('deltaThreshold').value);
+
+      const result = generateThemePalette(numColors, baseColors, deltaThreshold);
+      const palette = result.palette;
+      const attempts = result.attempts;
 
       const gridContainer = document.getElementById('colorGrid');
       gridContainer.innerHTML = '';
@@ -421,6 +562,10 @@
         colorBox.textContent = color;
         gridContainer.appendChild(colorBox);
       });
+
+      // Display attempt information
+      document.getElementById('attemptInfo').textContent =
+        `Generated ${palette.length} colors with Delta E ≥ ${deltaThreshold.toFixed(1)} in ${attempts} attempts`;
     }
 
     // Initial generation
